@@ -1,0 +1,902 @@
+-- ============================================================
+-- MINE PANEL v6.2 — без Fly
+-- ============================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
+
+local VIM
+pcall(function() VIM = game:GetService("VirtualInputManager") end)
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local playerGui = player:WaitForChild("PlayerGui")
+
+local movemouse = mousemoverel or (Input and Input.MouseMove) or mouse_moverel
+local clickMouse = mouse1click or function()
+    if mouse1press and mouse1release then
+        mouse1press(); task.wait(0.02); mouse1release()
+    end
+end
+
+if not movemouse then warn("no mousemoverel") return end
+
+local conns = {}
+local function track(c) table.insert(conns, c); return c end
+
+local ORI = {
+    ambient = Lighting.Ambient,
+    outdoorAmbient = Lighting.OutdoorAmbient,
+    brightness = Lighting.Brightness,
+    fogEnd = Lighting.FogEnd,
+    fogStart = Lighting.FogStart,
+    fogColor = Lighting.FogColor,
+}
+
+local S = {
+    AimEnabled = false, AimLocked = false, LockedTarget = nil, CurrentTarget = nil,
+    TargetLostTime = 0, AimSmooth = 0.15, AimFOV = 150, KeepFOV = 400, StickTime = 0.5,
+    AimPart = "Head", MaxDistance = 500, AimFilter = "Players",
+
+    TriggerEnabled = false, TriggerMode = "spam", TriggerDelay = 0.05,
+    TriggerCooldown = 0.55, TriggerRange = 300, TriggerFilter = "Players",
+
+    VisualCircle = true, CircleThick = 1.5, SkyTintEnabled = false,
+    SkyTintIndex = 1, FullbrightEnabled = false, FogEnabled = false,
+
+    ESPEnabled = false, ESPMode = "All", ESPPlayers = true, ESPNpc = true,
+    ESPMaxDist = 1000, ESPShowName = true, ESPShowDist = true,
+    ESPPlayerColor = Color3.fromRGB(255, 80, 80), ESPNpcColor = Color3.fromRGB(80, 200, 255),
+
+    BuildKey = Enum.KeyCode.X, BuildDelay = 0.03, LeaveKey = Enum.KeyCode.Z,
+
+    LockKey = Enum.KeyCode.Q, ToggleKey = Enum.KeyCode.C,
+    TriggerKey = Enum.KeyCode.V, ESPKey = Enum.KeyCode.Y,
+    PanelKey = Enum.KeyCode.RightShift,
+}
+
+local SkyPre = {
+    {name="Default", color=Color3.fromRGB(255,255,255)},
+    {name="Purple", color=Color3.fromRGB(210,160,255)},
+    {name="Blue", color=Color3.fromRGB(150,180,255)},
+    {name="Red", color=Color3.fromRGB(255,150,150)},
+    {name="Green", color=Color3.fromRGB(150,255,180)},
+    {name="Sunset", color=Color3.fromRGB(255,180,120)},
+    {name="Night", color=Color3.fromRGB(80,90,180)},
+}
+
+local C = {
+    bg = Color3.fromRGB(24,16,42), h1 = Color3.fromRGB(82,42,160), h2 = Color3.fromRGB(140,70,230),
+    btn = Color3.fromRGB(46,32,78), btnHover = Color3.fromRGB(58,40,96),
+    accent = Color3.fromRGB(160,90,255), active = Color3.fromRGB(120,60,210),
+    text = Color3.fromRGB(240,235,255), subtext = Color3.fromRGB(180,160,220),
+    stroke = Color3.fromRGB(90,60,160),
+}
+
+-- ============ GUI ============
+local sg = Instance.new("ScreenGui")
+sg.Name = "MinePanel"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true
+sg.Parent = playerGui
+
+local fovCircle = Instance.new("Frame")
+fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircle.Position = UDim2.new(0.5, 0, 0.5, 0)
+fovCircle.BackgroundTransparency = 1
+fovCircle.Size = UDim2.new(0, S.AimFOV*2, 0, S.AimFOV*2)
+fovCircle.Visible = false; fovCircle.ZIndex = 1; fovCircle.Parent = sg
+Instance.new("UICorner", fovCircle).CornerRadius = UDim.new(1, 0)
+local fovStroke = Instance.new("UIStroke")
+fovStroke.Thickness = S.CircleThick; fovStroke.Color = C.accent; fovStroke.Transparency = 0.25
+fovStroke.Parent = fovCircle
+
+local cc = Instance.new("ColorCorrectionEffect")
+cc.Name = "MinePanelCC"; cc.Enabled = false
+cc.TintColor = Color3.fromRGB(255,255,255); cc.Parent = Lighting
+
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 230, 0, 100); main.AutomaticSize = Enum.AutomaticSize.Y
+main.Position = UDim2.new(0, 20, 0.05, 0)
+main.BackgroundColor3 = C.bg; main.BorderSizePixel = 0
+main.Active = true; main.Draggable = true; main.Parent = sg
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
+local ms = Instance.new("UIStroke"); ms.Color = C.stroke; ms.Thickness = 1.5; ms.Parent = main
+
+local hdr = Instance.new("Frame")
+hdr.Size = UDim2.new(1, 0, 0, 38); hdr.BackgroundColor3 = C.h1; hdr.Parent = main
+Instance.new("UICorner", hdr).CornerRadius = UDim.new(0, 12)
+
+local hg = Instance.new("UIGradient")
+hg.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, C.h1), ColorSequenceKeypoint.new(1, C.h2)})
+hg.Parent = hdr
+
+local img = Instance.new("ImageLabel")
+img.Size = UDim2.new(0, 28, 0, 28); img.Position = UDim2.new(0, 10, 0.5, -14)
+img.BackgroundTransparency = 1; img.Image = "rbxassetid://135770461378877"
+img.ScaleType = Enum.ScaleType.Fit; img.Parent = hdr
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -90, 1, 0); title.Position = UDim2.new(0, 44, 0, 0)
+title.BackgroundTransparency = 1; title.Text = "Mine Panel"
+title.TextColor3 = C.text; title.Font = Enum.Font.GothamBold; title.TextSize = 14
+title.TextXAlignment = Enum.TextXAlignment.Left; title.Parent = hdr
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 28, 0, 28); closeBtn.Position = UDim2.new(1, -64, 0.5, -14)
+closeBtn.BackgroundTransparency = 1; closeBtn.Text = "✕"
+closeBtn.TextColor3 = Color3.fromRGB(255,120,120); closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 18; closeBtn.Parent = hdr
+
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, 28, 0, 28); minBtn.Position = UDim2.new(1, -34, 0.5, -14)
+minBtn.BackgroundTransparency = 1; minBtn.Text = "−"
+minBtn.TextColor3 = C.text; minBtn.Font = Enum.Font.GothamBold
+minBtn.TextSize = 20; minBtn.Parent = hdr
+
+local cont = Instance.new("Frame")
+cont.Size = UDim2.new(1, 0, 0, 0); cont.Position = UDim2.new(0, 0, 0, 38)
+cont.AutomaticSize = Enum.AutomaticSize.Y; cont.BackgroundTransparency = 1; cont.Parent = main
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 6); layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = cont
+
+local pd = Instance.new("UIPadding")
+pd.PaddingTop = UDim.new(0, 8); pd.PaddingBottom = UDim.new(0, 8)
+pd.PaddingLeft = UDim.new(0, 10); pd.PaddingRight = UDim.new(0, 10)
+pd.Parent = cont
+
+local function mkSlider(parent, y, txt, val, mn, mx, st, cb)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, -12, 0, 26); row.Position = UDim2.new(0, 6, 0, y)
+    row.BackgroundTransparency = 1; row.Parent = parent
+
+    local mnB = Instance.new("TextButton")
+    mnB.Size = UDim2.new(0, 24, 1, 0); mnB.BackgroundColor3 = C.btnHover
+    mnB.Text = "−"; mnB.TextColor3 = C.text; mnB.Font = Enum.Font.GothamBold
+    mnB.TextSize = 14; mnB.AutoButtonColor = false; mnB.Parent = row
+    Instance.new("UICorner", mnB).CornerRadius = UDim.new(0, 5)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -56, 1, 0); lbl.Position = UDim2.new(0, 28, 0, 0)
+    lbl.BackgroundTransparency = 1; lbl.Text = txt .. ":  " .. val
+    lbl.TextColor3 = C.text; lbl.Font = Enum.Font.Gotham; lbl.TextSize = 11; lbl.Parent = row
+
+    local plB = Instance.new("TextButton")
+    plB.Size = UDim2.new(0, 24, 1, 0); plB.Position = UDim2.new(1, -24, 0, 0)
+    plB.BackgroundColor3 = C.btnHover; plB.Text = "+"
+    plB.TextColor3 = C.text; plB.Font = Enum.Font.GothamBold
+    plB.TextSize = 14; plB.AutoButtonColor = false; plB.Parent = row
+    Instance.new("UICorner", plB).CornerRadius = UDim.new(0, 5)
+
+    local v = val
+    mnB.MouseButton1Click:Connect(function()
+        v = math.max(mn, v - st); v = tonumber(string.format("%.3f", v))
+        lbl.Text = txt .. ":  " .. v
+        if cb then cb(v) end
+    end)
+    plB.MouseButton1Click:Connect(function()
+        v = math.min(mx, v + st); v = tonumber(string.format("%.3f", v))
+        lbl.Text = txt .. ":  " .. v
+        if cb then cb(v) end
+    end)
+end
+
+local function mkToggle(parent, y, txt, def, cb)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, -12, 0, 26); b.Position = UDim2.new(0, 6, 0, y)
+    b.BackgroundColor3 = def and C.active or C.btnHover
+    b.Text = txt .. ":  " .. (def and "ON" or "OFF")
+    b.TextColor3 = C.text; b.Font = Enum.Font.Gotham; b.TextSize = 11
+    b.AutoButtonColor = false; b.Parent = parent
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+    local s = def
+    b.MouseButton1Click:Connect(function()
+        s = not s
+        b.Text = txt .. ":  " .. (s and "ON" or "OFF")
+        b.BackgroundColor3 = s and C.active or C.btnHover
+        if cb then cb(s) end
+    end)
+    return b
+end
+
+local function mkCycle(parent, y, labelFn, onClick)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, -12, 0, 26); b.Position = UDim2.new(0, 6, 0, y)
+    b.BackgroundColor3 = C.btnHover; b.Text = labelFn()
+    b.TextColor3 = C.text; b.Font = Enum.Font.Gotham; b.TextSize = 11
+    b.AutoButtonColor = false; b.Parent = parent
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+    b.MouseButton1Click:Connect(function()
+        if onClick then onClick() end
+        b.Text = labelFn()
+    end)
+    return b
+end
+
+-- ============ LOGIC ============
+local function isAlive()
+    local c = player.Character
+    if not c then return false end
+    local h = c:FindFirstChildOfClass("Humanoid")
+    return h and h.Health > 0
+end
+
+local function validT(m)
+    if not m or not m.Parent then return false end
+    local h = m:FindFirstChildOfClass("Humanoid")
+    if not h or h.Health <= 0 then return false end
+    if S.AimFilter == "Players" and not Players:GetPlayerFromCharacter(m) then return false end
+    return true
+end
+
+local function validTrig(m)
+    if not m or not m.Parent then return false end
+    local h = m:FindFirstChildOfClass("Humanoid")
+    if not h or h.Health <= 0 then return false end
+    if S.TriggerFilter == "Players" and not Players:GetPlayerFromCharacter(m) then return false end
+    return true
+end
+
+local function getPart(m, part)
+    if not m then return nil end
+    return m:FindFirstChild(part) or m:FindFirstChild("HumanoidRootPart")
+end
+
+local function findTarget(pxRad)
+    local mp = UserInputService:GetMouseLocation()
+    local mc = player.Character
+    local mr = mc and mc:FindFirstChild("HumanoidRootPart")
+    if not mr then return nil end
+    local best, bd = nil, pxRad
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl ~= player and pl.Character and validT(pl.Character) then
+            local p = getPart(pl.Character, S.AimPart)
+            if p then
+                local wd = (p.Position - mr.Position).Magnitude
+                if wd <= S.MaxDistance then
+                    local sp, on = camera:WorldToViewportPoint(p.Position)
+                    if on then
+                        local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
+                        if d < bd then bd = d; best = pl.Character end
+                    end
+                end
+            end
+        end
+    end
+    if S.AimFilter == "All" then
+        for _, o in ipairs(workspace:GetDescendants()) do
+            if o:IsA("Model") and o ~= mc then
+                local h = o:FindFirstChildOfClass("Humanoid")
+                if h and h.Health > 0 and not Players:GetPlayerFromCharacter(o) then
+                    local p = getPart(o, S.AimPart)
+                    if p then
+                        local wd = (p.Position - mr.Position).Magnitude
+                        if wd <= S.MaxDistance then
+                            local sp, on = camera:WorldToViewportPoint(p.Position)
+                            if on then
+                                local d = (Vector2.new(sp.X, sp.Y) - mp).Magnitude
+                                if d < bd then bd = d; best = o end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+local function scrDist(m)
+    if not validT(m) then return math.huge end
+    local p = getPart(m, S.AimPart)
+    if not p then return math.huge end
+    local sp, on = camera:WorldToViewportPoint(p.Position)
+    if not on then return math.huge end
+    return (Vector2.new(sp.X, sp.Y) - UserInputService:GetMouseLocation()).Magnitude
+end
+
+local function underCross()
+    local c = player.Character
+    if not c then return nil end
+    local r = camera:ViewportPointToRay(camera.ViewportSize.X/2, camera.ViewportSize.Y/2)
+    local p = RaycastParams.new()
+    p.FilterType = Enum.RaycastFilterType.Exclude
+    p.FilterDescendantsInstances = {c, camera}
+    local res = workspace:Raycast(r.Origin, r.Direction * S.TriggerRange, p)
+    if not res or not res.Instance then return nil end
+    local m = res.Instance:FindFirstAncestorOfClass("Model")
+    if m and validTrig(m) then return m end
+    return nil
+end
+
+local function leaveGame()
+    pcall(function() TeleportService:Teleport(game.PlaceId, player) end)
+    task.wait(0.2)
+    pcall(function() player:Kick("Left") end)
+end
+
+-- ============ ESP ============
+local espT = {}
+local function removeEsp(m)
+    local d = espT[m]; if not d then return end
+    if d.hl then pcall(function() d.hl:Destroy() end) end
+    if d.bb then pcall(function() d.bb:Destroy() end) end
+    espT[m] = nil
+end
+local function cleanupEsp() for m in pairs(espT) do removeEsp(m) end; espT = {} end
+
+local function createEsp(m, isNpc)
+    if espT[m] then return espT[m] end
+    if not m or not m.Parent then return nil end
+    local col = isNpc and S.ESPNpcColor or S.ESPPlayerColor
+    local hl = Instance.new("Highlight")
+    hl.Adornee = m; hl.FillColor = col; hl.OutlineColor = col
+    hl.FillTransparency = 0.5; hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop; hl.Parent = m
+
+    local head = m:FindFirstChild("Head") or m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+    local bb
+    if head then
+        bb = Instance.new("BillboardGui")
+        bb.Size = UDim2.new(0, 200, 0, 40); bb.StudsOffset = Vector3.new(0, 3, 0)
+        bb.AlwaysOnTop = true; bb.LightInfluence = 0; bb.Adornee = head; bb.Parent = head
+        local l1 = Instance.new("TextLabel")
+        l1.Size = UDim2.new(1, 0, 0.5, 0); l1.BackgroundTransparency = 1
+        l1.TextColor3 = col; l1.TextStrokeTransparency = 0; l1.TextStrokeColor3 = Color3.new(0,0,0)
+        l1.Font = Enum.Font.GothamBold; l1.TextSize = 14; l1.Parent = bb
+        local l2 = Instance.new("TextLabel")
+        l2.Size = UDim2.new(1, 0, 0.5, 0); l2.Position = UDim2.new(0, 0, 0.5, 0)
+        l2.BackgroundTransparency = 1; l2.TextColor3 = Color3.fromRGB(255,255,255)
+        l2.TextStrokeTransparency = 0; l2.TextStrokeColor3 = Color3.new(0,0,0)
+        l2.Font = Enum.Font.Gotham; l2.TextSize = 11; l2.Parent = bb
+    end
+    espT[m] = {hl = hl, bb = bb, isNpc = isNpc}
+    return espT[m]
+end
+
+local function updateEsp()
+    if not S.ESPEnabled then return end
+    local c = player.Character
+    if not c then return end
+    local mr = c:FindFirstChild("HumanoidRootPart")
+    if not mr then return end
+    local myPos = mr.Position
+    local all = (S.ESPMode == "All")
+
+    if S.ESPPlayers then
+        local found = {}
+        if all then
+            for _, pl in ipairs(Players:GetPlayers()) do
+                if pl ~= player and pl.Character and pl.Character ~= c then
+                    local h = pl.Character:FindFirstChildOfClass("Humanoid")
+                    local r = pl.Character:FindFirstChild("HumanoidRootPart")
+                    if h and h.Health > 0 and r then
+                        local d = (r.Position - myPos).Magnitude
+                        if d <= S.ESPMaxDist then
+                            found[pl.Character] = d
+                            local data = createEsp(pl.Character, false)
+                            if data and data.bb then
+                                local l1 = data.bb:FindFirstChildWhichIsA("TextLabel")
+                                local l2 = data.bb:GetChildren()[2]
+                                if l1 then l1.Text = S.ESPShowName and pl.Name or "Player" end
+                                if l2 then l2.Text = S.ESPShowDist and (math.floor(d) .. " studs") or "" end
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            local np, nd = nil, S.ESPMaxDist
+            for _, pl in ipairs(Players:GetPlayers()) do
+                if pl ~= player and pl.Character and pl.Character ~= c then
+                    local h = pl.Character:FindFirstChildOfClass("Humanoid")
+                    local r = pl.Character:FindFirstChild("HumanoidRootPart")
+                    if h and h.Health > 0 and r then
+                        local d = (r.Position - myPos).Magnitude
+                        if d < nd then nd = d; np = pl.Character end
+                    end
+                end
+            end
+            if np then
+                found[np] = nd
+                local data = createEsp(np, false)
+                if data and data.bb then
+                    local l1 = data.bb:FindFirstChildWhichIsA("TextLabel")
+                    local l2 = data.bb:GetChildren()[2]
+                    if l1 then l1.Text = S.ESPShowName and np.Name or "Player" end
+                    if l2 then l2.Text = S.ESPShowDist and (math.floor(nd) .. " studs") or "" end
+                end
+            end
+        end
+        for m, d in pairs(espT) do
+            if not d.isNpc and not found[m] then removeEsp(m) end
+        end
+    else
+        for m, d in pairs(espT) do if not d.isNpc then removeEsp(m) end end
+    end
+
+    if S.ESPNpc then
+        local found = {}
+        local conts = {workspace}
+        for _, ch in ipairs(workspace:GetChildren()) do
+            if ch:IsA("Folder") or ch:IsA("Model") then
+                table.insert(conts, ch)
+                for _, s in ipairs(ch:GetChildren()) do
+                    if s:IsA("Folder") or s:IsA("Model") then table.insert(conts, s) end
+                end
+            end
+        end
+        local seen = {}
+        for _, cn in ipairs(conts) do
+            if not seen[cn] then
+                seen[cn] = true
+                for _, o in ipairs(cn:GetChildren()) do
+                    if o:IsA("Model") and o ~= c and not seen[o] then
+                        local h = o:FindFirstChildOfClass("Humanoid")
+                        local r = o:FindFirstChild("HumanoidRootPart")
+                        if h and h.Health > 0 and r and not Players:GetPlayerFromCharacter(o) then
+                            local d = (r.Position - myPos).Magnitude
+                            if d <= S.ESPMaxDist and all then
+                                found[o] = d
+                                local data = createEsp(o, true)
+                                if data and data.bb then
+                                    local l1 = data.bb:FindFirstChildWhichIsA("TextLabel")
+                                    local l2 = data.bb:GetChildren()[2]
+                                    if l1 then l1.Text = "NPC" end
+                                    if l2 then l2.Text = S.ESPShowDist and (math.floor(d) .. " studs") or "" end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        if not all then
+            local np, nd = nil, S.ESPMaxDist
+            for _, cn in ipairs(conts) do
+                for _, o in ipairs(cn:GetChildren()) do
+                    if o:IsA("Model") and o ~= c then
+                        local h = o:FindFirstChildOfClass("Humanoid")
+                        local r = o:FindFirstChild("HumanoidRootPart")
+                        if h and h.Health > 0 and r and not Players:GetPlayerFromCharacter(o) then
+                            local d = (r.Position - myPos).Magnitude
+                            if d < nd then nd = d; np = o end
+                        end
+                    end
+                end
+            end
+            if np then
+                found[np] = nd
+                local data = createEsp(np, true)
+                if data and data.bb then
+                    local l1 = data.bb:FindFirstChildWhichIsA("TextLabel")
+                    local l2 = data.bb:GetChildren()[2]
+                    if l1 then l1.Text = "NPC" end
+                    if l2 then l2.Text = S.ESPShowDist and (math.floor(nd) .. " studs") or "" end
+                end
+            end
+        end
+        for m, d in pairs(espT) do if d.isNpc and not found[m] then removeEsp(m) end end
+    else
+        for m, d in pairs(espT) do if d.isNpc then removeEsp(m) end end
+    end
+end
+
+task.spawn(function()
+    while true do task.wait(0.2); if S.ESPEnabled then pcall(updateEsp) end end
+end)
+
+-- ============ AIM ============
+local function startAim()
+    pcall(function() RunService:UnbindFromRenderStep("AimLoop") end)
+    RunService:BindToRenderStep("AimLoop", Enum.RenderPriority.Camera.Value + 1, function(dt)
+        if not S.AimEnabled then return end
+        if not isAlive() then S.CurrentTarget = nil return end
+        if UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter then
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        end
+        local t = nil
+        local now = tick()
+        if S.AimLocked and validT(S.LockedTarget) then t = S.LockedTarget
+        else
+            if S.AimLocked then S.AimLocked = false; S.LockedTarget = nil end
+            if validT(S.CurrentTarget) then
+                local d = scrDist(S.CurrentTarget)
+                if d < S.KeepFOV then t = S.CurrentTarget; S.TargetLostTime = 0
+                elseif now - S.TargetLostTime < S.StickTime then t = S.CurrentTarget
+                else S.CurrentTarget = nil end
+            end
+            if not t then
+                t = findTarget(S.AimFOV)
+                if t then S.CurrentTarget = t; S.TargetLostTime = 0 end
+            elseif not validT(S.CurrentTarget) then S.TargetLostTime = now end
+        end
+        if not t then return end
+        local p = getPart(t, S.AimPart); if not p then return end
+        local sp, on = camera:WorldToViewportPoint(p.Position); if not on then return end
+        local mp = UserInputService:GetMouseLocation()
+        movemouse(math.clamp((sp.X - mp.X) * S.AimSmooth, -30, 30), math.clamp((sp.Y - mp.Y) * S.AimSmooth, -30, 30))
+    end)
+end
+
+local function stopAim()
+    pcall(function() RunService:UnbindFromRenderStep("AimLoop") end)
+    S.CurrentTarget = nil
+end
+
+-- ============ TRIGGER ============
+local trigConn = nil
+local function startTrig()
+    if trigConn then trigConn:Disconnect() end
+    local last = 0
+    local phase = "idle"
+    trigConn = track(RunService.Heartbeat:Connect(function()
+        if not S.TriggerEnabled then return end
+        if not isAlive() then phase = "idle" return end
+        local t = underCross()
+        if not t then phase = "idle" return end
+        local c = player.Character
+        local h = c and c:FindFirstChildOfClass("Humanoid")
+        if not h then return end
+        if S.TriggerMode == "spam" then
+            local now = tick()
+            if now - last >= S.TriggerDelay then clickMouse(); last = now end
+        elseif S.TriggerMode == "crit" then
+            local st = h:GetState()
+            local now = tick()
+            if phase == "idle" then
+                if st == Enum.HumanoidStateType.Running or st == Enum.HumanoidStateType.RunningNoPhysics or st == Enum.HumanoidStateType.Landed then
+                    h.Jump = true; phase = "air"
+                end
+            elseif phase == "air" then
+                if st == Enum.HumanoidStateType.Freefall or st == Enum.HumanoidStateType.FallingDown then
+                    local r = c:FindFirstChild("HumanoidRootPart")
+                    if r and r.AssemblyLinearVelocity.Y < -0.5 then
+                        if underCross() then clickMouse(); phase = "wait"; last = now
+                        else phase = "idle" end
+                    end
+                end
+            elseif phase == "wait" then
+                if (st == Enum.HumanoidStateType.Landed or st == Enum.HumanoidStateType.Running) and now - last >= S.TriggerCooldown then
+                    phase = "idle"
+                end
+            end
+        end
+    end))
+end
+
+local function stopTrig()
+    if trigConn then trigConn:Disconnect(); trigConn = nil end
+end
+
+-- ============ VISUAL ============
+local function applySky()
+    cc.Enabled = S.SkyTintEnabled
+    if S.SkyTintEnabled then cc.TintColor = SkyPre[S.SkyTintIndex].color end
+end
+
+local function applyFB()
+    if S.FullbrightEnabled then
+        Lighting.Ambient = Color3.fromRGB(255,255,255)
+        Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
+        Lighting.Brightness = 3
+    else
+        Lighting.Ambient = ORI.ambient; Lighting.OutdoorAmbient = ORI.outdoorAmbient
+        Lighting.Brightness = ORI.brightness
+    end
+end
+
+local function applyFog()
+    if S.FogEnabled then
+        Lighting.FogStart = 0; Lighting.FogEnd = 300; Lighting.FogColor = Color3.fromRGB(140,90,200)
+    else
+        Lighting.FogStart = ORI.fogStart; Lighting.FogEnd = ORI.fogEnd; Lighting.FogColor = ORI.fogColor
+    end
+end
+
+-- ============ BUILD ============
+local buildActive = false
+local buildThread = nil
+
+local function spamRMB()
+    local vp = camera.ViewportSize
+    local x, y = math.floor(vp.X/2), math.floor(vp.Y/2)
+    pcall(function()
+        if mouse2press and mouse2release then
+            mouse2press(); task.wait(0.005); mouse2release()
+        elseif VIM then
+            VIM:SendMouseButtonEvent(x, y, 1, true, game, 1)
+            task.wait(0.005)
+            VIM:SendMouseButtonEvent(x, y, 1, false, game, 1)
+        end
+    end)
+end
+
+local function startBuild()
+    if buildActive then return end
+    if not isAlive() then return end
+    buildActive = true
+    buildThread = task.spawn(function()
+        while buildActive do spamRMB(); task.wait(S.BuildDelay) end
+    end)
+end
+
+local function stopBuild()
+    if not buildActive then return end
+    buildActive = false
+    if buildThread then pcall(function() task.cancel(buildThread) end); buildThread = nil end
+end
+
+-- ============ CLOSE ============
+local unloaded = false
+closeBtn.MouseButton1Click:Connect(function()
+    if unloaded then return end
+    unloaded = true
+    pcall(function()
+        stopAim(); stopTrig(); stopBuild(); cleanupEsp()
+        Lighting.Ambient = ORI.ambient; Lighting.OutdoorAmbient = ORI.outdoorAmbient
+        Lighting.Brightness = ORI.brightness; Lighting.FogStart = ORI.fogStart
+        Lighting.FogEnd = ORI.fogEnd; Lighting.FogColor = ORI.fogColor
+        if cc then cc:Destroy() end
+        for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+        if sg then sg:Destroy() end
+    end)
+end)
+
+-- ============ MODULES ============
+local aimMod, trigMod, espMod, buildMod, leaveMod, visMod
+local buildStatus, buildBindBtn, leaveBindBtn
+local capturingBuildBind, capturingLeaveBind = false, false
+
+local function createModule(order, name, hk, builders)
+    local sh = #builders * 28 + 8
+    local mod = Instance.new("Frame")
+    mod.Size = UDim2.new(1, 0, 0, 32); mod.BackgroundColor3 = C.btn
+    mod.BorderSizePixel = 0; mod.LayoutOrder = order
+    mod.AutomaticSize = Enum.AutomaticSize.Y; mod.ClipsDescendants = false
+    mod.Parent = cont
+    Instance.new("UICorner", mod).CornerRadius = UDim.new(0, 8)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = C.stroke; stroke.Thickness = 1; stroke.Transparency = 0.5; stroke.Parent = mod
+
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 32); row.BackgroundTransparency = 1; row.Parent = mod
+
+    local tb = Instance.new("TextButton")
+    tb.Size = UDim2.new(1, -60, 1, 0); tb.BackgroundTransparency = 1
+    tb.Text = name .. "  [" .. hk .. "]:  OFF"
+    tb.TextColor3 = C.text; tb.Font = Enum.Font.GothamBold; tb.TextSize = 12
+    tb.TextXAlignment = Enum.TextXAlignment.Left; tb.Parent = row
+    local tp = Instance.new("UIPadding"); tp.PaddingLeft = UDim.new(0, 12); tp.Parent = tb
+
+    local ab = Instance.new("TextButton")
+    ab.Size = UDim2.new(0, 32, 1, 0); ab.Position = UDim2.new(1, -32, 0, 0)
+    ab.BackgroundTransparency = 1; ab.Text = "v"; ab.TextColor3 = C.accent
+    ab.Font = Enum.Font.GothamBold; ab.TextSize = 14; ab.Parent = row
+
+    local sub = Instance.new("Frame")
+    sub.Size = UDim2.new(1, 0, 0, 0); sub.Position = UDim2.new(0, 0, 0, 32)
+    sub.BackgroundTransparency = 1; sub.ClipsDescendants = true
+    sub.Visible = false; sub.Parent = mod
+
+    for i, b in ipairs(builders) do b(sub, (i - 1) * 28 + 4) end
+
+    local open = false
+    ab.MouseButton1Click:Connect(function()
+        open = not open
+        if open then
+            sub.Visible = true
+            TweenService:Create(sub, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, sh)}):Play()
+            TweenService:Create(ab, TweenInfo.new(0.28), {Rotation = 180}):Play()
+        else
+            TweenService:Create(ab, TweenInfo.new(0.28), {Rotation = 0}):Play()
+            local t = TweenService:Create(sub, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {Size = UDim2.new(1, 0, 0, 0)})
+            t.Completed:Connect(function() sub.Visible = false end)
+            t:Play()
+        end
+    end)
+
+    return {
+        module = mod, toggleBtn = tb,
+        setActive = function(a)
+            tb.Text = name .. "  [" .. hk .. "]:  " .. (a and "ON" or "OFF")
+            mod.BackgroundColor3 = a and C.active or C.btn
+        end,
+    }
+end
+
+local function toggleAim()
+    S.AimEnabled = not S.AimEnabled
+    if aimMod then aimMod.setActive(S.AimEnabled) end
+    if S.AimEnabled then
+        if S.VisualCircle then fovCircle.Visible = true end
+        startAim()
+    else
+        fovCircle.Visible = false
+        stopAim()
+    end
+end
+
+local function toggleTrig()
+    S.TriggerEnabled = not S.TriggerEnabled
+    if trigMod then trigMod.setActive(S.TriggerEnabled) end
+    if S.TriggerEnabled then startTrig() else stopTrig() end
+end
+
+local function toggleEsp()
+    S.ESPEnabled = not S.ESPEnabled
+    if espMod then espMod.setActive(S.ESPEnabled) end
+    if not S.ESPEnabled then cleanupEsp() end
+end
+
+local function toggleLock()
+    S.AimLocked = not S.AimLocked
+    if S.AimLocked then
+        local t = findTarget(S.AimFOV) or S.CurrentTarget
+        if t then S.LockedTarget = t else S.AimLocked = false end
+    else
+        S.LockedTarget = nil
+    end
+end
+
+local function togglePanel()
+    main.Visible = not main.Visible
+    fovCircle.Visible = main.Visible and S.AimEnabled and S.VisualCircle
+end
+
+aimMod = createModule(1, "Aim", "C", {
+    function(p, y) mkCycle(p, y, function() return "Target:  " .. S.AimFilter end, function() S.AimFilter = (S.AimFilter == "Players") and "All" or "Players"; S.CurrentTarget = nil end) end,
+    function(p, y) mkToggle(p, y, "Lock [Q]", false, function(s)
+        S.AimLocked = s
+        if s then
+            local t = findTarget(S.AimFOV) or S.CurrentTarget
+            if t then S.LockedTarget = t else S.AimLocked = false end
+        else S.LockedTarget = nil end
+    end) end,
+    function(p, y) mkSlider(p, y, "Smooth", S.AimSmooth, 0.03, 0.3, 0.01, function(v) S.AimSmooth = v end) end,
+    function(p, y) mkSlider(p, y, "FOV", S.AimFOV, 30, 600, 20, function(v) S.AimFOV = v; fovCircle.Size = UDim2.new(0, v*2, 0, v*2) end) end,
+})
+aimMod.toggleBtn.MouseButton1Click:Connect(toggleAim)
+
+trigMod = createModule(2, "Trigger", "V", {
+    function(p, y) mkCycle(p, y, function() return "Target:  " .. S.TriggerFilter end, function() S.TriggerFilter = (S.TriggerFilter == "Players") and "All" or "Players" end) end,
+    function(p, y) mkCycle(p, y, function() return "Mode:  " .. string.upper(S.TriggerMode) end, function() S.TriggerMode = (S.TriggerMode == "spam") and "crit" or "spam" end) end,
+    function(p, y) mkSlider(p, y, "Delay", S.TriggerDelay, 0.01, 0.5, 0.01, function(v) S.TriggerDelay = v end) end,
+    function(p, y) mkSlider(p, y, "CritCD", S.TriggerCooldown, 0.1, 2.0, 0.05, function(v) S.TriggerCooldown = v end) end,
+    function(p, y) mkSlider(p, y, "Range", S.TriggerRange, 30, 1000, 20, function(v) S.TriggerRange = v end) end,
+})
+trigMod.toggleBtn.MouseButton1Click:Connect(toggleTrig)
+
+espMod = createModule(3, "ESP", "Y", {
+    function(p, y) mkCycle(p, y, function() return "Mode:  " .. S.ESPMode end, function() S.ESPMode = (S.ESPMode == "All") and "Nearest" or "All" end) end,
+    function(p, y) mkToggle(p, y, "Players", S.ESPPlayers, function(s) S.ESPPlayers = s end) end,
+    function(p, y) mkToggle(p, y, "NPC", S.ESPNpc, function(s) S.ESPNpc = s end) end,
+    function(p, y) mkToggle(p, y, "ShowName", S.ESPShowName, function(s) S.ESPShowName = s end) end,
+    function(p, y) mkToggle(p, y, "ShowDist", S.ESPShowDist, function(s) S.ESPShowDist = s end) end,
+    function(p, y) mkSlider(p, y, "Range", S.ESPMaxDist, 100, 5000, 100, function(v) S.ESPMaxDist = v end) end,
+})
+espMod.toggleBtn.MouseButton1Click:Connect(toggleEsp)
+
+buildMod = createModule(4, "Build", S.BuildKey.Name, {
+    function(p, y) mkSlider(p, y, "Delay", S.BuildDelay, 0.01, 0.2, 0.01, function(v) S.BuildDelay = v end) end,
+    function(p, y)
+        buildBindBtn = Instance.new("TextButton")
+        buildBindBtn.Size = UDim2.new(1, -12, 0, 26); buildBindBtn.Position = UDim2.new(0, 6, 0, y)
+        buildBindBtn.BackgroundColor3 = C.btnHover; buildBindBtn.Text = "Bind:  " .. S.BuildKey.Name
+        buildBindBtn.TextColor3 = C.text; buildBindBtn.Font = Enum.Font.Gotham; buildBindBtn.TextSize = 11
+        buildBindBtn.AutoButtonColor = false; buildBindBtn.Parent = p
+        Instance.new("UICorner", buildBindBtn).CornerRadius = UDim.new(0, 5)
+        buildBindBtn.MouseButton1Click:Connect(function()
+            capturingBuildBind = true
+            buildBindBtn.Text = "Bind:  [press...]"
+            buildBindBtn.BackgroundColor3 = C.accent
+        end)
+    end,
+    function(p, y)
+        buildStatus = Instance.new("TextLabel")
+        buildStatus.Size = UDim2.new(1, -12, 0, 22); buildStatus.Position = UDim2.new(0, 6, 0, y)
+        buildStatus.BackgroundTransparency = 1; buildStatus.Text = "Hold " .. S.BuildKey.Name .. " to build"
+        buildStatus.TextColor3 = C.subtext; buildStatus.Font = Enum.Font.Gotham
+        buildStatus.TextSize = 10; buildStatus.Parent = p
+    end,
+})
+buildMod.toggleBtn.MouseButton1Click:Connect(function()
+    if buildActive then stopBuild() else startBuild() end
+end)
+
+local leaveMod = createModule(5, "Leave", S.LeaveKey.Name, {
+    function(p, y)
+        leaveBindBtn = Instance.new("TextButton")
+        leaveBindBtn.Size = UDim2.new(1, -12, 0, 26); leaveBindBtn.Position = UDim2.new(0, 6, 0, y)
+        leaveBindBtn.BackgroundColor3 = C.btnHover; leaveBindBtn.Text = "Bind:  " .. S.LeaveKey.Name
+        leaveBindBtn.TextColor3 = C.text; leaveBindBtn.Font = Enum.Font.Gotham; leaveBindBtn.TextSize = 11
+        leaveBindBtn.AutoButtonColor = false; leaveBindBtn.Parent = p
+        Instance.new("UICorner", leaveBindBtn).CornerRadius = UDim.new(0, 5)
+        leaveBindBtn.MouseButton1Click:Connect(function()
+            capturingLeaveBind = true
+            leaveBindBtn.Text = "Bind:  [press...]"
+            leaveBindBtn.BackgroundColor3 = C.accent
+        end)
+    end,
+    function(p, y)
+        local info = Instance.new("TextLabel")
+        info.Size = UDim2.new(1, -12, 0, 22); info.Position = UDim2.new(0, 6, 0, y)
+        info.BackgroundTransparency = 1; info.Text = "Press key = leave game"
+        info.TextColor3 = C.subtext; info.Font = Enum.Font.Gotham
+        info.TextSize = 10; info.Parent = p
+    end,
+})
+leaveMod.toggleBtn.MouseButton1Click:Connect(function() leaveGame() end)
+
+local visMod = createModule(6, "Visual", "B", {
+    function(p, y) mkToggle(p, y, "FOV Circle", S.VisualCircle, function(s) S.VisualCircle = s; if S.AimEnabled then fovCircle.Visible = s end end) end,
+    function(p, y) mkSlider(p, y, "Thick", S.CircleThick, 0.5, 5, 0.5, function(v) S.CircleThick = v; fovStroke.Thickness = v end) end,
+    function(p, y) mkToggle(p, y, "SkyTint", S.SkyTintEnabled, function(s) S.SkyTintEnabled = s; applySky() end) end,
+    function(p, y) mkCycle(p, y, function() return "Color:  " .. SkyPre[S.SkyTintIndex].name end, function() S.SkyTintIndex = S.SkyTintIndex % #SkyPre + 1; applySky() end) end,
+    function(p, y) mkToggle(p, y, "Fullbright", S.FullbrightEnabled, function(s) S.FullbrightEnabled = s; applyFB() end) end,
+    function(p, y) mkToggle(p, y, "Fog", S.FogEnabled, function(s) S.FogEnabled = s; applyFog() end) end,
+})
+visMod.toggleBtn.MouseButton1Click:Connect(function()
+    local anyOn = S.VisualCircle or S.SkyTintEnabled or S.FullbrightEnabled or S.FogEnabled
+    if anyOn then
+        S.VisualCircle = false; S.SkyTintEnabled = false
+        S.FullbrightEnabled = false; S.FogEnabled = false
+        fovCircle.Visible = false
+        applySky(); applyFB(); applyFog()
+        visMod.setActive(false)
+    else
+        S.VisualCircle = true; S.SkyTintEnabled = true
+        applySky()
+        visMod.setActive(true)
+        if S.AimEnabled then fovCircle.Visible = true end
+    end
+end)
+
+minBtn.MouseButton1Click:Connect(togglePanel)
+
+track(player.CharacterAdded:Connect(function()
+    S.CurrentTarget = nil; S.LockedTarget = nil; S.AimLocked = false
+    stopBuild(); cleanupEsp()
+    if S.AimEnabled then task.wait(1); startAim() end
+    if S.TriggerEnabled then startTrig() end
+end))
+
+local lastBuildHeld = false
+track(RunService.Heartbeat:Connect(function()
+    local held = false
+    pcall(function() held = UserInputService:IsKeyDown(S.BuildKey) end)
+    if held and not lastBuildHeld and not buildActive then startBuild()
+    elseif not held and lastBuildHeld and buildActive then stopBuild() end
+    lastBuildHeld = held
+end))
+
+track(UserInputService.InputBegan:Connect(function(input, gpe)
+    if capturingBuildBind and input.UserInputType == Enum.UserInputType.Keyboard then
+        capturingBuildBind = false
+        S.BuildKey = input.KeyCode
+        if buildBindBtn then buildBindBtn.Text = "Bind:  " .. S.BuildKey.Name; buildBindBtn.BackgroundColor3 = C.btnHover end
+        if buildStatus then buildStatus.Text = "Hold " .. S.BuildKey.Name .. " to build" end
+        return
+    end
+    if capturingLeaveBind and input.UserInputType == Enum.UserInputType.Keyboard then
+        capturingLeaveBind = false
+        S.LeaveKey = input.KeyCode
+        if leaveBindBtn then leaveBindBtn.Text = "Bind:  " .. S.LeaveKey.Name; leaveBindBtn.BackgroundColor3 = C.btnHover end
+        return
+    end
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    if UserInputService:GetFocusedTextBox() then return end
+
+    if input.KeyCode == S.PanelKey then togglePanel()
+    elseif input.KeyCode == S.ToggleKey then toggleAim()
+    elseif input.KeyCode == S.TriggerKey then toggleTrig()
+    elseif input.KeyCode == S.LockKey then toggleLock()
+    elseif input.KeyCode == S.ESPKey then toggleEsp()
+    elseif input.KeyCode == S.LeaveKey then leaveGame() end
+end))
+
+print("Mine Panel v6.2 загружен. C-Aim, V-Trigger, Y-ESP, X-Build, Q-Lock, Z-Leave")
